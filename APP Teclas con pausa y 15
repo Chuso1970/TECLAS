@@ -162,6 +162,12 @@
           <input id="iconInput" type="file" accept="image/*" />
         </label>
       </div>
+      <div style="margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap;">
+        <button id="saveConfigButton" type="button">Guardar configuración</button>
+        <button id="exportConfigButton" type="button">Guardar en archivo</button>
+        <button id="importConfigButton" type="button">Cargar desde archivo</button>
+        <input id="configFileInput" type="file" accept="application/json" style="display:none;" />
+      </div>
     </div>
 
     <div class="panel">
@@ -193,8 +199,13 @@
     const labelInput = document.getElementById('labelInput');
     const shortcutInput = document.getElementById('shortcutInput');
     const clearShortcutButton = document.getElementById('clearShortcutButton');
+    const saveConfigButton = document.getElementById('saveConfigButton');
+    const exportConfigButton = document.getElementById('exportConfigButton');
+    const importConfigButton = document.getElementById('importConfigButton');
+    const configFileInput = document.getElementById('configFileInput');
     const audioInput = document.getElementById('audioInput');
     const iconInput = document.getElementById('iconInput');
+    const STORAGE_KEY = 'control-deck-shortcuts-v1';
     let audioCtx = null;
     let activeCustomAudio = null;
     let activeSynth = null;
@@ -251,6 +262,191 @@
       updateButtonMarkup(button, pad);
       button.addEventListener('click', () => triggerPad(index, button));
       grid.appendChild(button);
+    }
+
+    function storageAvailable(type) {
+      try {
+        const storage = window[type];
+        const testKey = '__control_deck_test__';
+        storage.setItem(testKey, '1');
+        storage.removeItem(testKey);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function readStoredConfig() {
+      const readers = [];
+      if (storageAvailable('localStorage')) {
+        readers.push(() => window.localStorage.getItem(STORAGE_KEY));
+      }
+      if (storageAvailable('sessionStorage')) {
+        readers.push(() => window.sessionStorage.getItem(STORAGE_KEY));
+      }
+      readers.push(() => {
+        const match = document.cookie.match(new RegExp('(?:^|; )' + STORAGE_KEY + '=([^;]*)'));
+        return match ? decodeURIComponent(match[1]) : null;
+      });
+      readers.push(() => {
+        try {
+          return window.name || null;
+        } catch (error) {
+          return null;
+        }
+      });
+
+      for (const reader of readers) {
+        const value = reader();
+        if (value) return value;
+      }
+      return null;
+    }
+
+    function writeStoredConfig(payload) {
+      const writers = [];
+      if (storageAvailable('localStorage')) {
+        writers.push(() => window.localStorage.setItem(STORAGE_KEY, payload));
+      }
+      if (storageAvailable('sessionStorage')) {
+        writers.push(() => window.sessionStorage.setItem(STORAGE_KEY, payload));
+      }
+      writers.push(() => {
+        document.cookie = `${STORAGE_KEY}=${encodeURIComponent(payload)}; path=/; max-age=31536000`;
+      });
+      writers.push(() => {
+        try {
+          window.name = payload;
+        } catch (error) {
+          // Ignoramos errores de la ventana.
+        }
+      });
+
+      let wrote = false;
+      for (const writer of writers) {
+        try {
+          writer();
+          wrote = true;
+        } catch (error) {
+          // Continuamos con el siguiente método si uno falla.
+        }
+      }
+      return wrote;
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function assetToDataUrl(url) {
+      if (!url) return '';
+      if (url.startsWith('data:')) return url;
+      if (!url.startsWith('blob:')) return url;
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return fileToDataUrl(new File([blob], 'asset', { type: blob.type }));
+    }
+
+    async function getConfigPayload() {
+      const customAudioUrls = await Promise.all(padData.map((pad) => assetToDataUrl(pad.customAudioUrl || '')));
+      const customIconUrls = await Promise.all(padData.map((pad) => assetToDataUrl(pad.customIconUrl || '')));
+      return {
+        version: 1,
+        shortcuts: padData.map((pad) => pad.shortcut || ''),
+        labels: padData.map((pad) => pad.label || ''),
+        customAudioUrls,
+        customIconUrls
+      };
+    }
+
+    function saveShortcutConfig() {
+      const shortcuts = padData.map((pad) => pad.shortcut || '');
+      return writeStoredConfig(JSON.stringify(shortcuts));
+    }
+
+    async function exportConfigToFile() {
+      const payload = JSON.stringify(await getConfigPayload(), null, 2);
+      const blob = new Blob([payload], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'control-deck-config.json';
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importConfigFromFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          if (parsed.shortcuts && Array.isArray(parsed.shortcuts)) {
+            parsed.shortcuts.forEach((shortcut, index) => {
+              if (padData[index]) {
+                padData[index].shortcut = shortcut || '';
+              }
+            });
+          }
+          if (parsed.labels && Array.isArray(parsed.labels)) {
+            parsed.labels.forEach((label, index) => {
+              if (padData[index]) {
+                padData[index].label = label || padData[index].icon;
+              }
+            });
+          }
+          if (parsed.customAudioUrls && Array.isArray(parsed.customAudioUrls)) {
+            parsed.customAudioUrls.forEach((url, index) => {
+              if (padData[index] && url) {
+                padData[index].customAudioUrl = url;
+              }
+            });
+          }
+          if (parsed.customIconUrls && Array.isArray(parsed.customIconUrls)) {
+            parsed.customIconUrls.forEach((url, index) => {
+              if (padData[index] && url) {
+                padData[index].customIconUrl = url;
+              }
+            });
+          }
+          applyShortcutLabels();
+          syncEditorForSelectedPad();
+        } catch (error) {
+          console.warn('No se pudo cargar el archivo de configuración', error);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function applyShortcutLabels() {
+      padData.forEach((pad, index) => {
+        const button = grid.children[index];
+        if (button) updateButtonMarkup(button, pad);
+      });
+    }
+
+    function loadShortcutConfig() {
+      try {
+        const saved = readStoredConfig();
+        if (!saved) return false;
+        const parsed = JSON.parse(saved);
+        if (!Array.isArray(parsed)) return false;
+        parsed.forEach((shortcut, index) => {
+          if (padData[index]) {
+            padData[index].shortcut = shortcut || '';
+          }
+        });
+        applyShortcutLabels();
+        return true;
+      } catch (error) {
+        console.warn('No se pudo cargar la configuración de teclas', error);
+        return false;
+      }
     }
 
     function getAudioContext() {
@@ -344,6 +540,7 @@
       });
     }
 
+    loadShortcutConfig();
     padData.forEach(createPadButton);
 
     function syncEditorForSelectedPad() {
@@ -388,6 +585,7 @@
       shortcutInput.value = shortcut;
       const button = grid.children[index];
       if (button) updateButtonMarkup(button, padData[index]);
+      saveShortcutConfig();
     });
 
     clearShortcutButton.addEventListener('click', () => {
@@ -396,22 +594,46 @@
       shortcutInput.value = '';
       const button = grid.children[index];
       if (button) updateButtonMarkup(button, padData[index]);
+      saveShortcutConfig();
     });
 
-    audioInput.addEventListener('change', () => {
+    saveConfigButton.addEventListener('click', () => {
+      const saved = saveShortcutConfig();
+      saveConfigButton.textContent = saved ? 'Guardado ✓' : 'Error al guardar';
+      setTimeout(() => {
+        saveConfigButton.textContent = 'Guardar configuración';
+      }, 1200);
+    });
+
+    exportConfigButton.addEventListener('click', exportConfigToFile);
+
+    importConfigButton.addEventListener('click', () => {
+      configFileInput.click();
+    });
+
+    configFileInput.addEventListener('change', () => {
+      importConfigFromFile(configFileInput.files[0]);
+      configFileInput.value = '';
+    });
+
+    audioInput.addEventListener('change', async () => {
       const index = Number(padSelector.value);
       const file = audioInput.files[0];
       if (!file) return;
-      padData[index].customAudioUrl = URL.createObjectURL(file);
+      padData[index].customAudioUrl = await fileToDataUrl(file);
     });
 
-    iconInput.addEventListener('change', () => {
+    iconInput.addEventListener('change', async () => {
       const index = Number(padSelector.value);
       const file = iconInput.files[0];
       if (!file) return;
-      padData[index].customIconUrl = URL.createObjectURL(file);
+      padData[index].customIconUrl = await fileToDataUrl(file);
       const button = grid.children[index];
       if (button) updateButtonMarkup(button, padData[index]);
+    });
+
+    window.addEventListener('beforeunload', () => {
+      saveShortcutConfig();
     });
 
     window.addEventListener('keydown', (event) => {
