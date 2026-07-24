@@ -60,6 +60,25 @@
       padding: 8px;
     }
 
+    .shortcut-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .shortcut-row input {
+      flex: 1;
+    }
+
+    .shortcut-row button {
+      border: none;
+      border-radius: 10px;
+      background: #334155;
+      color: #fff;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
     .pads {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -100,7 +119,7 @@
     <div class="panel">
       <div class="controls">
         <label>
-          Tecla
+          Botón
           <select id="padSelector">
             <option value="0">1</option>
             <option value="1">2</option>
@@ -112,12 +131,25 @@
             <option value="7">8</option>
             <option value="8">9</option>
             <option value="9">0</option>
+            <option value="10">Q</option>
+            <option value="11">W</option>
+            <option value="12">E</option>
+            <option value="13">R</option>
+            <option value="14">T</option>
           </select>
         </label>
 
         <label>
           Nombre
           <input id="labelInput" type="text" placeholder="Nombre visible" />
+        </label>
+
+        <label>
+          Tecla asignada
+          <div class="shortcut-row">
+            <input id="shortcutInput" type="text" maxlength="10" placeholder="Pulsa una tecla" autocomplete="off" spellcheck="false" />
+            <button id="clearShortcutButton" type="button">Borrar</button>
+          </div>
         </label>
 
         <label>
@@ -148,12 +180,19 @@
       { icon: '✨', label: 'Spark', shortcut: '7', type: 'square', freq: 466, gain: 0.12, attack: 0.01, release: 0.4, filter: 2100, q: 0.6 },
       { icon: '💥', label: 'Impact', shortcut: '8', type: 'sawtooth', freq: 148, gain: 0.2, attack: 0.005, release: 0.38, filter: 600, q: 1.8 },
       { icon: '🎶', label: 'Chime', shortcut: '9', type: 'triangle', freq: 523, gain: 0.11, attack: 0.015, release: 0.58, filter: 2500, q: 0.7 },
-      { icon: '🎛️', label: 'Drop', shortcut: '0', type: 'square', freq: 88, gain: 0.21, attack: 0.03, release: 0.9, filter: 500, q: 2.0 }
+      { icon: '🎛️', label: 'Drop', shortcut: '0', type: 'square', freq: 88, gain: 0.21, attack: 0.03, release: 0.9, filter: 500, q: 2.0 },
+      { icon: '🌊', label: 'Wave', shortcut: 'Q', type: 'sine', freq: 260, gain: 0.12, attack: 0.015, release: 0.6, filter: 1400, q: 0.9 },
+      { icon: '🦋', label: 'Glow', shortcut: 'W', type: 'triangle', freq: 440, gain: 0.13, attack: 0.01, release: 0.55, filter: 1700, q: 0.8 },
+      { icon: '🌈', label: 'Echo', shortcut: 'E', type: 'square', freq: 620, gain: 0.11, attack: 0.01, release: 0.5, filter: 2300, q: 0.7 },
+      { icon: '🌙', label: 'Night', shortcut: 'R', type: 'sawtooth', freq: 180, gain: 0.16, attack: 0.02, release: 0.72, filter: 800, q: 1.2 },
+      { icon: '⚡', label: 'Pulse', shortcut: 'T', type: 'sine', freq: 840, gain: 0.1, attack: 0.008, release: 0.4, filter: 2600, q: 0.6 }
     ];
 
     const grid = document.getElementById('pads');
     const padSelector = document.getElementById('padSelector');
     const labelInput = document.getElementById('labelInput');
+    const shortcutInput = document.getElementById('shortcutInput');
+    const clearShortcutButton = document.getElementById('clearShortcutButton');
     const audioInput = document.getElementById('audioInput');
     const iconInput = document.getElementById('iconInput');
     let audioCtx = null;
@@ -190,12 +229,14 @@
     function updateButtonMarkup(button, pad) {
       const iconNode = button.querySelector('.icon');
       const labelNode = button.querySelector('.label');
+      const shortcutNode = button.querySelector('.shortcut');
       if (pad.customIconUrl) {
         iconNode.innerHTML = `<img src="${pad.customIconUrl}" alt="${pad.label}" style="width: 42px; height: 42px; object-fit: cover; border-radius: 10px;">`;
       } else {
         iconNode.textContent = pad.icon;
       }
       labelNode.textContent = pad.label;
+      shortcutNode.textContent = pad.shortcut ? `Tecla ${pad.shortcut}` : 'Sin tecla';
     }
 
     function createPadButton(pad, index) {
@@ -305,14 +346,54 @@
 
     padData.forEach(createPadButton);
 
-    padSelector.addEventListener('change', () => {
+    function syncEditorForSelectedPad() {
       const index = Number(padSelector.value);
-      labelInput.value = padData[index].label;
-    });
+      const pad = padData[index];
+      labelInput.value = pad.label;
+      shortcutInput.value = pad.shortcut || '';
+    }
+
+    padSelector.addEventListener('change', syncEditorForSelectedPad);
 
     labelInput.addEventListener('input', () => {
       const index = Number(padSelector.value);
       padData[index].label = labelInput.value || padData[index].icon;
+      const button = grid.children[index];
+      if (button) updateButtonMarkup(button, padData[index]);
+    });
+
+    function formatShortcut(event) {
+      if (event.key === ' ') return 'Space';
+      if (['Escape', 'Enter', 'Tab', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+        return event.key;
+      }
+      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'ContextMenu'].includes(event.key)) {
+        return '';
+      }
+      if (event.key.length === 1) {
+        return event.key.toUpperCase();
+      }
+      return event.code || event.key;
+    }
+
+    shortcutInput.addEventListener('keydown', (event) => {
+      const shortcut = formatShortcut(event);
+      if (!shortcut) return;
+      if (shortcut === 'Tab') return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const index = Number(padSelector.value);
+      padData[index].shortcut = shortcut;
+      shortcutInput.value = shortcut;
+      const button = grid.children[index];
+      if (button) updateButtonMarkup(button, padData[index]);
+    });
+
+    clearShortcutButton.addEventListener('click', () => {
+      const index = Number(padSelector.value);
+      padData[index].shortcut = '';
+      shortcutInput.value = '';
       const button = grid.children[index];
       if (button) updateButtonMarkup(button, padData[index]);
     });
@@ -334,8 +415,22 @@
     });
 
     window.addEventListener('keydown', (event) => {
-      const map = { '1':0, '2':1, '3':2, '4':3, '5':4, '6':5, '7':6, '8':7, '9':8, '0':9 };
-      const index = map[event.key];
+      if (event.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)) return;
+
+      const key = event.key;
+      const code = event.code;
+      const candidates = [key, key.toLowerCase(), code, code.toLowerCase(), `${key}`.toLowerCase(), `${code}`.toLowerCase()];
+      const shortcutMap = padData.reduce((map, pad, index) => {
+        if (pad.shortcut) {
+          const normalized = String(pad.shortcut).trim().toLowerCase();
+          map[normalized] = index;
+          if (normalized === 'space') {
+            map[' '] = index;
+          }
+        }
+        return map;
+      }, {});
+      const index = candidates.map((candidate) => shortcutMap[candidate]).find((value) => value !== undefined);
       if (index === undefined) return;
       event.preventDefault();
       const button = grid.children[index];
