@@ -1,0 +1,84 @@
+const padData = [
+  { icon: '🎵', label: 'Beat', shortcut: '1', type: 'sine', freq: 220 },
+  { icon: '🎹', label: 'Piano', shortcut: '2', type: 'triangle', freq: 330 },
+  { icon: '🔊', label: 'Bass', shortcut: '3', type: 'sawtooth', freq: 110 },
+  { icon: '🌩️', label: 'Thunder', shortcut: '4', type: 'square', freq: 165 },
+  { icon: '🪩', label: 'Dance', shortcut: '5', type: 'triangle', freq: 392 },
+  { icon: '🎚️', label: 'Sweep', shortcut: '6', type: 'sine', freq: 294 },
+  { icon: '✨', label: 'Spark', shortcut: '7', type: 'square', freq: 466 },
+  { icon: '💥', label: 'Impact', shortcut: '8', type: 'sawtooth', freq: 148 },
+  { icon: '🎶', label: 'Chime', shortcut: '9', type: 'triangle', freq: 523 },
+  { icon: '🎛️', label: 'Drop', shortcut: '0', type: 'square', freq: 88 }
+];
+
+const grid = document.getElementById('pads');
+const status = document.getElementById('status');
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function createPadButton(pad, index) {
+  const button = document.createElement('button');
+  button.className = 'pad';
+  button.type = 'button';
+  button.setAttribute('aria-label', `${pad.label}, tecla ${pad.shortcut}`);
+  button.innerHTML = `
+    <div class="icon">${pad.icon}</div>
+    <div class="label">${pad.label}</div>
+    <div class="shortcut">Tecla ${pad.shortcut}</div>
+  `;
+
+  button.addEventListener('click', () => triggerPad(index, button));
+  grid.appendChild(button);
+}
+
+function playTone(config) {
+  const now = audioCtx.currentTime;
+  const oscillator = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+
+  oscillator.type = config.type;
+  oscillator.frequency.setValueAtTime(config.freq, now);
+  oscillator.frequency.exponentialRampToValueAtTime(config.freq * 0.7, now + 0.28);
+
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(1200, now);
+  filter.Q.value = 1.2;
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.17, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+
+  oscillator.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  oscillator.start(now);
+  oscillator.stop(now + 0.56);
+}
+
+function triggerPad(index, button) {
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+
+  playTone(padData[index]);
+  status.textContent = `Reproduciendo ${padData[index].label}`;
+
+  button.classList.add('active');
+  setTimeout(() => button.classList.remove('active'), 130);
+}
+
+padData.forEach(createPadButton);
+
+document.addEventListener('keydown', (event) => {
+  const keyMap = {
+    '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
+    '6': 5, '7': 6, '8': 7, '9': 8, '0': 9
+  };
+
+  const padIndex = keyMap[event.key];
+  if (padIndex !== undefined) {
+    const button = grid.children[padIndex];
+    if (button) triggerPad(padIndex, button);
+  }
+});
