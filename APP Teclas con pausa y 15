@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control Deck</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 20px;
+      background: linear-gradient(135deg, #020617, #111827 70%, #0f172a);
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+    }
+
+    .shell {
+      width: min(960px, calc(100vw - 24px));
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel {
+      background: rgba(15, 23, 42, 0.92);
+      border-radius: 18px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+
+    input, select {
+      width: 100%;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      background: #0f172a;
+      color: #fff;
+      padding: 8px;
+    }
+
+    .pads {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .pad {
+      min-height: 120px;
+      border: none;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #334155, #0f172a);
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+    }
+
+    .pad.active {
+      background: linear-gradient(180deg, #22c55e, #0f172a);
+      transform: scale(0.98);
+    }
+
+    .icon { font-size: 2rem; }
+    .label { font-weight: 700; }
+    .shortcut { color: var(--muted); font-size: 0.78rem; }
+
+    @media (max-width: 700px) {
+      .pads { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="panel">
+      <div class="controls">
+        <label>
+          Tecla
+          <select id="padSelector">
+            <option value="0">1</option>
+            <option value="1">2</option>
+            <option value="2">3</option>
+            <option value="3">4</option>
+            <option value="4">5</option>
+            <option value="5">6</option>
+            <option value="6">7</option>
+            <option value="7">8</option>
+            <option value="8">9</option>
+            <option value="9">0</option>
+          </select>
+        </label>
+
+        <label>
+          Nombre
+          <input id="labelInput" type="text" placeholder="Nombre visible" />
+        </label>
+
+        <label>
+          Audio propio
+          <input id="audioInput" type="file" accept="audio/*" />
+        </label>
+
+        <label>
+          Icono propio
+          <input id="iconInput" type="file" accept="image/*" />
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div id="pads" class="pads" aria-label="Teclas de sonido"></div>
+    </div>
+  </div>
+
+  <script>
+    const padData = [
+      { icon: '🎵', label: 'Beat', shortcut: '1', type: 'sine', freq: 220, gain: 0.17, attack: 0.02, release: 0.55, filter: 1200, q: 1.2 },
+      { icon: '🎹', label: 'Piano', shortcut: '2', type: 'triangle', freq: 330, gain: 0.14, attack: 0.01, release: 0.62, filter: 1800, q: 0.9 },
+      { icon: '🔊', label: 'Bass', shortcut: '3', type: 'sawtooth', freq: 110, gain: 0.19, attack: 0.03, release: 0.8, filter: 900, q: 1.5 },
+      { icon: '🌩️', label: 'Thunder', shortcut: '4', type: 'square', freq: 165, gain: 0.16, attack: 0.01, release: 0.45, filter: 700, q: 1.0 },
+      { icon: '🪩', label: 'Dance', shortcut: '5', type: 'triangle', freq: 392, gain: 0.15, attack: 0.02, release: 0.5, filter: 1500, q: 1.1 },
+      { icon: '🎚️', label: 'Sweep', shortcut: '6', type: 'sine', freq: 294, gain: 0.13, attack: 0.02, release: 0.7, filter: 1600, q: 0.8 },
+      { icon: '✨', label: 'Spark', shortcut: '7', type: 'square', freq: 466, gain: 0.12, attack: 0.01, release: 0.4, filter: 2100, q: 0.6 },
+      { icon: '💥', label: 'Impact', shortcut: '8', type: 'sawtooth', freq: 148, gain: 0.2, attack: 0.005, release: 0.38, filter: 600, q: 1.8 },
+      { icon: '🎶', label: 'Chime', shortcut: '9', type: 'triangle', freq: 523, gain: 0.11, attack: 0.015, release: 0.58, filter: 2500, q: 0.7 },
+      { icon: '🎛️', label: 'Drop', shortcut: '0', type: 'square', freq: 88, gain: 0.21, attack: 0.03, release: 0.9, filter: 500, q: 2.0 }
+    ];
+
+    const grid = document.getElementById('pads');
+    const padSelector = document.getElementById('padSelector');
+    const labelInput = document.getElementById('labelInput');
+    const audioInput = document.getElementById('audioInput');
+    const iconInput = document.getElementById('iconInput');
+    let audioCtx = null;
+    let activeCustomAudio = null;
+    let activeSynth = null;
+    let activePadIndex = null;
+
+    function stopActiveSound() {
+      if (activeCustomAudio) {
+        activeCustomAudio.pause();
+        activeCustomAudio.currentTime = 0;
+        activeCustomAudio = null;
+      }
+
+      if (activeSynth) {
+        try {
+          activeSynth.oscillator.stop();
+        } catch (error) {
+          // El oscilador ya puede haber finalizado.
+        }
+        try {
+          activeSynth.oscillator.disconnect();
+          activeSynth.filter.disconnect();
+          activeSynth.gain.disconnect();
+        } catch (error) {
+          // Ignoramos errores de desconexión.
+        }
+        activeSynth = null;
+      }
+
+      activePadIndex = null;
+    }
+
+    function updateButtonMarkup(button, pad) {
+      const iconNode = button.querySelector('.icon');
+      const labelNode = button.querySelector('.label');
+      if (pad.customIconUrl) {
+        iconNode.innerHTML = `<img src="${pad.customIconUrl}" alt="${pad.label}" style="width: 42px; height: 42px; object-fit: cover; border-radius: 10px;">`;
+      } else {
+        iconNode.textContent = pad.icon;
+      }
+      labelNode.textContent = pad.label;
+    }
+
+    function createPadButton(pad, index) {
+      const button = document.createElement('button');
+      button.className = 'pad';
+      button.type = 'button';
+      button.innerHTML = `
+        <div class="icon">${pad.icon}</div>
+        <div class="label">${pad.label}</div>
+        <div class="shortcut">Tecla ${pad.shortcut}</div>
+      `;
+      updateButtonMarkup(button, pad);
+      button.addEventListener('click', () => triggerPad(index, button));
+      grid.appendChild(button);
+    }
+
+    function getAudioContext() {
+      if (!window.AudioContext && !window.webkitAudioContext) return null;
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function unlockAudio() {
+      const ctx = getAudioContext();
+      if (!ctx) return Promise.resolve(false);
+      if (ctx.state === 'suspended') {
+        return ctx.resume().then(() => true).catch(() => false);
+      }
+      return Promise.resolve(true);
+    }
+
+    function playTone(config) {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+
+      stopActiveSound();
+
+      const now = ctx.currentTime;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      oscillator.type = config.type;
+      oscillator.frequency.setValueAtTime(config.freq, now);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(config.filter ?? 1200, now);
+      filter.Q.value = config.q ?? 1;
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(config.gain ?? 0.17, now + (config.attack ?? 0.02));
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + (config.release ?? 0.55));
+
+      oscillator.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      activeSynth = { oscillator, gain, filter };
+      oscillator.onended = () => {
+        if (activeSynth && activeSynth.oscillator === oscillator) {
+          activeSynth = null;
+        }
+      };
+
+      oscillator.start(now);
+      oscillator.stop(now + (config.release ?? 0.55) + 0.05);
+    }
+
+    function playCustomAudio(config) {
+      if (!config.customAudioUrl) return false;
+
+      stopActiveSound();
+
+      const audio = new Audio(config.customAudioUrl);
+      audio.loop = false;
+      activeCustomAudio = audio;
+      audio.onended = () => {
+        if (activeCustomAudio === audio) {
+          activeCustomAudio = null;
+        }
+      };
+
+      audio.play().catch(() => {
+        activeCustomAudio = null;
+      });
+      return true;
+    }
+
+    function triggerPad(index, button) {
+      const pad = padData[index];
+      if (!pad) return;
+
+      if (activePadIndex === index) {
+        stopActiveSound();
+        return;
+      }
+
+      unlockAudio().then((ready) => {
+        if (!ready) return;
+        stopActiveSound();
+        const played = playCustomAudio(pad);
+        if (!played) playTone(pad);
+        activePadIndex = index;
+        button.classList.add('active');
+        setTimeout(() => button.classList.remove('active'), 120);
+      });
+    }
+
+    padData.forEach(createPadButton);
+
+    padSelector.addEventListener('change', () => {
+      const index = Number(padSelector.value);
+      labelInput.value = padData[index].label;
+    });
+
+    labelInput.addEventListener('input', () => {
+      const index = Number(padSelector.value);
+      padData[index].label = labelInput.value || padData[index].icon;
+      const button = grid.children[index];
+      if (button) updateButtonMarkup(button, padData[index]);
+    });
+
+    audioInput.addEventListener('change', () => {
+      const index = Number(padSelector.value);
+      const file = audioInput.files[0];
+      if (!file) return;
+      padData[index].customAudioUrl = URL.createObjectURL(file);
+    });
+
+    iconInput.addEventListener('change', () => {
+      const index = Number(padSelector.value);
+      const file = iconInput.files[0];
+      if (!file) return;
+      padData[index].customIconUrl = URL.createObjectURL(file);
+      const button = grid.children[index];
+      if (button) updateButtonMarkup(button, padData[index]);
+    });
+
+    window.addEventListener('keydown', (event) => {
+      const map = { '1':0, '2':1, '3':2, '4':3, '5':4, '6':5, '7':6, '8':7, '9':8, '0':9 };
+      const index = map[event.key];
+      if (index === undefined) return;
+      event.preventDefault();
+      const button = grid.children[index];
+      if (button) triggerPad(index, button);
+    });
+  </script>
